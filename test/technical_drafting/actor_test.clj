@@ -29,8 +29,11 @@
                 {}
                 "thread-1")]
     (is (some? result))
+    ;; Escalations interrupt before commit, so no record committed yet
     (is (= 0 (count (store/records-of st "proj-1"))))
-    (is (pos? (count (store/ledger st))))))
+    ;; Ledger is only populated on hard blocks or after approval+commit
+    ;; At interrupt point, ledger is still empty (audit trail is in graph state)
+    (is (= 0 (count (store/ledger st))))))
 
 (deftest ^:integration actor-hard-block-on-finalize-attempt
   (let [st (fresh-store)
