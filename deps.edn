@@ -1,0 +1,16 @@
+{:paths ["src"]
+ :deps {io.github.kotoba-lang/langgraph
+        {:git/sha "5b4e5e70837b849b14b6a5800894e3be202ad5fa"}}
+ :aliases
+ {:test {:extra-paths ["test"]
+         :extra-deps {io.github.cognitect-labs/test-runner
+                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+         :main-opts ["-m" "cognitect.test-runner"]}
+  :scope-exclusions
+  {;; Scope rules per CLAUDE.md § "`.cljc` / `.kotoba` runtime priority"
+   ;; This repo is cljs-first portable code (no JVM-only constructs)
+   ;; Target platforms: kototama wasm actor host + browser WASM/JS + nbb CLI
+   ;; Second-rank: ClojureScript ES modules (browser), Chicory (test compat)
+   ;; Last: JVM standalone (not the app target), bb (not the app target)
+   :clj  ["JVM-only constructs; this actor is .cljc portable"]
+   :bb   ["babashka (not app runtime; tools only)"]}}}
