@@ -52,24 +52,24 @@ human-in-the-loop interrupt/resume via checkpointing.
                                            +-> :hold               (:hard? true)
 ```
 
-- `src/technical_drafting/store.cljc` — `Store` protocol + `MemStore`:
+- `src/technical_drafting/store.kotoba` — `Store` protocol + `MemStore`:
   registered projects, registered **drawings** (`:draft` /
   `:issued-for-construction` / `:superseded`), committed drafting records, and a
   hash-chained append-only audit ledger.
-- `src/technical_drafting/advisor.cljc` — `Advisor` protocol; `mock-advisor`
+- `src/technical_drafting/advisor.kotoba` — `Advisor` protocol; `mock-advisor`
   (deterministic, default) proposes a drafting operation from a
   request; `llm-advisor` wraps a `langchain.model/ChatModel` — either
   way the advisor only ever produces a `:propose`-effect proposal,
   never a final stamp, and LLM parse failures always yield
   `confidence 0.0` (forces escalation, never fabricated confidence).
-- `src/technical_drafting/operation.cljc` — the **closed vocabulary**. `supported`
+- `src/technical_drafting/operation.kotoba` — the **closed vocabulary**. `supported`
   is the allowlist of what the actor may propose; `reserved` names authority it
   does not hold (sealing, certifying or approving a drawing for construction,
   destroying the record) with a stated reason for each. An op in neither map is
   refused as `:undeclared-op`.
-- `src/technical_drafting/facts.cljc` — one named, pure predicate per question the
+- `src/technical_drafting/facts.kotoba` — one named, pure predicate per question the
   governor asks, each testable without building a graph.
-- `src/technical_drafting/governor.cljc` — `TechnicalDraftingGovernor/check`: a pure
+- `src/technical_drafting/governor.kotoba` — `TechnicalDraftingGovernor/check`: a pure
   function, wired as its own `:govern` node. It holds the ORDER of the questions;
   each question lives in `facts`, over the vocabulary in `operation`. Hard
   invariants (a request naming no project or an unregistered one, an undeclared
@@ -80,15 +80,15 @@ human-in-the-loop interrupt/resume via checkpointing.
   that is already issued for construction) always route to `:request-approval` —
   an `interrupt-before` node that the graph checkpoints and only resumes on
   explicit human approval (`actor/approve!`).
-- `src/technical_drafting/phase.cljc` — the verdict → phase mapping as a named pure
+- `src/technical_drafting/phase.kotoba` — the verdict → phase mapping as a named pure
   function. `:hard?` is checked before `:escalate?`: a proposal that is both must
   hold, because escalating it would ask a human to approve something they cannot
   authorise.
-- `src/technical_drafting/ledger.cljc` — hash-chained audit entries, `verify`, and
+- `src/technical_drafting/ledger.kotoba` — hash-chained audit entries, `verify`, and
   the `:approved-by` field that distinguishes a human-approved write from an
   automatic one.
-- `src/technical_drafting/sim.cljc` — the governed-scenario gate (see below).
-- `src/technical_drafting/actor.cljc` — `build-graph`, `run-request!`,
+- `src/technical_drafting/sim.kotoba` — the governed-scenario gate (see below).
+- `src/technical_drafting/actor.kotoba` — `build-graph`, `run-request!`,
   `approve!`: the `langgraph.graph/state-graph` wiring itself.
 
 Proposed operations (all `:effect :propose`):
