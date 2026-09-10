@@ -53,24 +53,41 @@ human-in-the-loop interrupt/resume via checkpointing.
 ```
 
 - `src/technical_drafting/store.cljc` — `Store` protocol + `MemStore`:
-  registered projects/clients, committed drafting records, an append-only audit ledger.
+  registered projects, registered **drawings** (`:draft` /
+  `:issued-for-construction` / `:superseded`), committed drafting records, and a
+  hash-chained append-only audit ledger.
 - `src/technical_drafting/advisor.cljc` — `Advisor` protocol; `mock-advisor`
   (deterministic, default) proposes a drafting operation from a
   request; `llm-advisor` wraps a `langchain.model/ChatModel` — either
   way the advisor only ever produces a `:propose`-effect proposal,
   never a final stamp, and LLM parse failures always yield
   `confidence 0.0` (forces escalation, never fabricated confidence).
+- `src/technical_drafting/operation.cljc` — the **closed vocabulary**. `supported`
+  is the allowlist of what the actor may propose; `reserved` names authority it
+  does not hold (sealing, certifying or approving a drawing for construction,
+  destroying the record) with a stated reason for each. An op in neither map is
+  refused as `:undeclared-op`.
+- `src/technical_drafting/facts.cljc` — one named, pure predicate per question the
+  governor asks, each testable without building a graph.
 - `src/technical_drafting/governor.cljc` — `TechnicalDraftingGovernor/check`: a pure
-  function, wired as its own `:govern` node. Hard invariants
-  (unregistered project, a proposal whose `:effect` isn't `:propose`,
-  any attempt to finalize or certify a drawing for construction)
-  always route to `:hold`. Escalation invariants (specification discrepancy flags
-  or low advisor confidence) always route to
-  `:request-approval` — an `interrupt-before` node that the graph
-  checkpoints and only resumes on explicit human approval
-  (`actor/approve!`), matching the README's robotics-premise statement
-  that finalizing and construction-ready certification always remain the
-  licensed designer's or engineer's sole responsibility.
+  function, wired as its own `:govern` node. It holds the ORDER of the questions;
+  each question lives in `facts`, over the vocabulary in `operation`. Hard
+  invariants (a request naming no project or an unregistered one, an undeclared
+  or reserved op, an `:effect` that isn't `:propose`, a `:confidence` outside
+  `[0,1]`, a citing op naming a drawing that is unregistered, another project's,
+  or already superseded) always route to `:hold`. Escalation invariants
+  (specification discrepancy flags, low advisor confidence, or revising a drawing
+  that is already issued for construction) always route to `:request-approval` —
+  an `interrupt-before` node that the graph checkpoints and only resumes on
+  explicit human approval (`actor/approve!`).
+- `src/technical_drafting/phase.cljc` — the verdict → phase mapping as a named pure
+  function. `:hard?` is checked before `:escalate?`: a proposal that is both must
+  hold, because escalating it would ask a human to approve something they cannot
+  authorise.
+- `src/technical_drafting/ledger.cljc` — hash-chained audit entries, `verify`, and
+  the `:approved-by` field that distinguishes a human-approved write from an
+  automatic one.
+- `src/technical_drafting/sim.cljc` — the governed-scenario gate (see below).
 - `src/technical_drafting/actor.cljc` — `build-graph`, `run-request!`,
   `approve!`: the `langgraph.graph/state-graph` wiring itself.
 
@@ -80,9 +97,27 @@ Proposed operations (all `:effect :propose`):
 - `:flag-specification-discrepancy` — surface a discrepancy between drawing and specification, ALWAYS escalates
 - `:request-designer-review` — propose scheduling a designer/engineer review session
 
+Reserved operations — **permanently blocked, never escalated**, because a human
+approving them would be approving *this actor* doing something that is not theirs
+to delegate: `:finalize-drawing`, `:certify-construction-ready`,
+`:approve-for-construction`, `:seal-and-stamp`, `:delete-project-archive`,
+`:disable-audit-ledger`.
+
+## Checks
+
 ```bash
-clojure -M:test
+clojure -M:test    # unit + integration
+clojure -M:sim     # governed-scenario gate
+clojure -M:lint
 ```
+
+`clojure -M:sim` runs a table of requests through the **real** StateGraph and
+reports which the governor refused, asserting for each one the phase it reached
+*and the violation rule it names* — a scenario that starts holding for the wrong
+reason is a mismatch, not a pass. It exits non-zero when the table demonstrates
+**no refusal at all**: a governed actor's claim is not that it acts, it is that
+there exist actions it refuses, so a harness that could only pass would be
+evidence of nothing.
 
 This is what backs this repo's `:maturity :implemented` entry in
 [`kotoba-lang/occupation`](https://github.com/kotoba-lang/occupation).

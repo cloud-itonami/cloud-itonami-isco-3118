@@ -19,7 +19,8 @@
   confidence), which forces the governor to escalate/hold."
   ;; clojure.edn, not clojure.core/read-string: this parses untrusted
   ;; advisor output, and the core reader executes #=(...) at read time.
-  (:require [clojure.edn :as edn]))
+  (:require [clojure.edn :as edn]
+            [technical-drafting.operation :as op]))
 
 (defprotocol Advisor
   (-advise [advisor store request] "request -> proposal map"))
@@ -32,8 +33,17 @@
   {:op op
    :effect :propose
    :stake (or stake :low)
-   :confidence (case (or stake :low) :high 0.7 :medium 0.85 :low 0.95)
-   :rationale (str "proposed " (name op) " for project " (:project-id request))})
+   ;; An unrecognised stake yields NO confidence rather than a default one. The
+   ;; pre-change `case` threw on any stake outside the three it named, and a
+   ;; fabricated confidence would be worse: the governor's whole confidence
+   ;; check is downstream of this number meaning something.
+   :confidence (case (or stake :low) :high 0.7 :medium 0.85 :low 0.95 nil)
+   ;; `operation/label`, not `name`: `(name nil)` throws, so the pre-change
+   ;; rationale crashed the run on `{:op nil}` BEFORE the governor was
+   ;; consulted. A crash is not a refusal — it leaves no verdict, no hold and
+   ;; no ledger entry, which is the one outcome a governed actor must not have.
+   :rationale (str "proposed " (op/label op) " for project " (:project-id request))
+   :drawing-id (:drawing-id request)})
 
 (defn mock-advisor []
   (reify Advisor

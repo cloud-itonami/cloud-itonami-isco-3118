@@ -8,20 +8,38 @@
   resume after human sign-off.
 
   ```text
-  :intake -> :advise -> :govern -> :decide -+-> :commit           (:ok? true)
-                                             +-> :request-approval  (:escalate? true, interrupt-before)
-                                             +-> :hold              (:hard? true)
+  :intake -> :advise -> :govern -> :decide -+-> :commit           (phase :commit)
+                                             +-> :request-approval  (phase :request-approval, interrupt-before)
+                                             +-> :hold              (phase :hold)
   ```
 
   The unconditional invariant: the TechnicalDraftingAdvisor can never
   directly finalize or certify a drawing, or dispatch action the
   TechnicalDraftingGovernor refuses — every commit-record! call is gated
-  behind `:decide`."
+  behind `:decide`.
+
+  Two things this namespace no longer decides for itself. The verdict → phase
+  mapping is `technical-drafting.phase/of-verdict`, a named pure function
+  rather than an inline `cond` reachable only by running a graph. And every
+  ledger write goes through `technical-drafting.ledger`, which chains each
+  entry to the one before it and records WHO approved the write — measured on
+  the pre-change tree, a human-approved commit and an automatic one left
+  entries with no field telling them apart, which is the one question the
+  approval interrupt exists to answer."
   (:require [langgraph.graph :as g]
             [langgraph.checkpoint :as cp]
             [technical-drafting.advisor :as advisor]
             [technical-drafting.governor :as governor]
+            [technical-drafting.ledger :as led]
+            [technical-drafting.phase :as phase]
             [technical-drafting.store :as store]))
+
+(defn- append-chained!
+  "Append `m` to the store's ledger as a chained entry. The chain is built here
+  because this is where the previous hash is known; `store/append-ledger!`
+  appends what it is given."
+  [st m]
+  (store/append-ledger! st (led/entry (store/ledger st) m)))
 
 (defn build-graph
   "Build a compiled TechnicalDraftingActor graph. `store` implements
@@ -53,23 +71,27 @@
                         :audit [{:node :govern :verdict v}]})))
       (g/add-node :decide
                    (fn [{:keys [verdict]}]
-                     {:disposition (cond
-                                     (:hard? verdict) :hold
-                                     (:escalate? verdict) :request-approval
-                                     :else :commit)}))
+                     {:disposition (phase/of-verdict verdict)}))
       (g/add-node :request-approval (fn [s] s))
       (g/add-node :commit
-                   (fn [{:keys [request proposal]}]
+                   (fn [{:keys [request proposal disposition]}]
                      (let [record {:project-id (:project-id request)
-                                    :op (:op proposal)
-                                    :payload proposal}]
+                                   :op (:op proposal)
+                                   :drawing-id (:drawing-id proposal)
+                                   :payload proposal}
+                           ;; The commit node is reached either directly (the
+                           ;; governor admitted it) or from the interrupted
+                           ;; :request-approval node (a human resumed the
+                           ;; thread). `:disposition` still carries which,
+                           ;; because :request-approval does not overwrite it.
+                           approved-by (if (phase/approved-commit? disposition) :human :actor)]
                        (store/commit-record! store record)
-                       (store/append-ledger! store {:disposition :commit :record record})
+                       (append-chained! store (led/commit-entry record approved-by))
                        {:record record
-                        :audit [{:node :commit :record record}]})))
+                        :audit [{:node :commit :record record :approved-by approved-by}]})))
       (g/add-node :hold
                    (fn [{:keys [verdict]}]
-                     (store/append-ledger! store {:disposition :hold :verdict verdict})
+                     (append-chained! store (led/hold-entry verdict))
                      {:audit [{:node :hold :verdict verdict}]}))
       (g/set-entry-point :intake)
       (g/add-edge :intake :advise)
@@ -99,6 +121,7 @@
 (defn approve!
   "Human-in-the-loop resume: the interrupted `:request-approval` node
   advances straight to `:commit` on resume (approval is the act of
-  resuming the thread)."
+  resuming the thread). The resulting ledger entry records
+  `:approved-by :human`."
   [graph thread-id]
   (g/run* graph nil {:thread-id thread-id :resume? true}))
