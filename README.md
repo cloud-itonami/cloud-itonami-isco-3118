@@ -106,12 +106,12 @@ to delegate: `:finalize-drawing`, `:certify-construction-ready`,
 ## Checks
 
 ```bash
-clojure -M:test    # unit + integration
-clojure -M:sim     # governed-scenario gate
-clojure -M:lint
+kbb -M:test    # unit + integration
+kbb -M:sim     # governed-scenario gate
+kbb -M:lint
 ```
 
-`clojure -M:sim` runs a table of requests through the **real** StateGraph and
+`kbb -M:sim` runs a table of requests through the **real** StateGraph and
 reports which the governor refused, asserting for each one the phase it reached
 *and the violation rule it names* — a scenario that starts holding for the wrong
 reason is a mismatch, not a pass. It exits non-zero when the table demonstrates
